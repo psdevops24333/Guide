@@ -2,13 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
 
 type Section = { id: string; image: string; text: string };
 type Manual = { id: string; share_id: string; title: string; created_at: string };
 type ChatMsg = { role: "user" | "model"; content: string; image?: string };
 
 export default function Home() {
-  // สเตตหลัก
+  const router = useRouter();
+
+  // ===== Auth =====
+  const [user, setUser] = useState<any>(null);
+
+  // ===== คู่มือ =====
   const [sections, setSections] = useState<Section[]>([]);
   const [title, setTitle] = useState("คู่มือใหม่");
   const [analyzing, setAnalyzing] = useState(false);
@@ -17,24 +23,46 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // สเตตแชท
+  // ===== แชท =====
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatImage, setChatImage] = useState<string | null>(null);
   const [chatting, setChatting] = useState(false);
 
+  // ตรวจ session: ไม่ล็อกอิน → ไป /login
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data.session?.user) router.replace("/login");
+      else setUser(data.session.user);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) setUser(session.user);
+      else router.replace("/login");
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [router]);
+
+  // โหลดเฉพาะคู่มือของตัวเอง
   const loadManuals = useCallback(async () => {
+    if (!user) return;
     const { data } = await supabase
       .from("manuals")
       .select("id, share_id, title, created_at")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(20);
     if (data) setManuals(data);
-  }, []);
+  }, [user]);
 
   useEffect(() => { loadManuals(); }, [loadManuals]);
 
-  // อัปโหลดหลายรูปพร้อมกัน
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSections([]);
+    setChatMessages([]);
+  };
+
+  // ===== อัปโหลดหลายรูปพร้อมกัน =====
   const handleUploadMultiple = async (files: FileList | File[]) => {
     setAnalyzing(true);
     setMessage("");
@@ -58,7 +86,7 @@ export default function Home() {
     setAnalyzing(false);
   };
 
-  // ส่งข้อความแชท
+  // ===== ส่งข้อความแชท =====
   const sendChatMessage = async () => {
     if (!chatInput.trim() && !chatImage) return;
     setChatting(true);
@@ -85,7 +113,6 @@ export default function Home() {
     }
   };
 
-  // เพิ่มคำตอบแชทเป็นขั้นตอนในคู่มือ
   const addChatToManual = (content: string, imageUrl?: string) => {
     setSections((prev) => [
       ...prev,
@@ -93,13 +120,17 @@ export default function Home() {
     ]);
   };
 
-  // เซฟคู่มือ
+  // ===== เซฟคู่มือ (ผูกกับ user_id) =====
   const saveManual = async () => {
     if (sections.length === 0) return setMessage("⚠️ ยังไม่มีขั้นตอนให้เซฟ");
     setSaving(true);
     setMessage("");
     try {
-      const { data: manual, error: mErr } = await supabase.from("manuals").insert({ title }).select().single();
+      const { data: manual, error: mErr } = await supabase
+        .from("manuals")
+        .insert({ title, user_id: user.id })
+        .select()
+        .single();
       if (mErr) throw mErr;
 
       for (let i = 0; i < sections.length; i++) {
@@ -109,7 +140,10 @@ export default function Home() {
         if (sec.image.startsWith("data:")) {
           const fileName = `${manual.id}/${Date.now()}-${i}.png`;
           const blob = await (await fetch(sec.image)).blob();
-          await supabase.storage.from("manual-images").upload(fileName, blob, { contentType: "image/png" });
+          const { error: upErr } = await supabase.storage
+            .from("manual-images")
+            .upload(fileName, blob, { contentType: "image/png" });
+          if (upErr) throw upErr;
           imageUrl = supabase.storage.from("manual-images").getPublicUrl(fileName).data.publicUrl;
         }
 
@@ -130,11 +164,29 @@ export default function Home() {
     }
   };
 
+  // กำลังตรวจสอบ session
+  if (!user) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">กำลังตรวจสอบการเข้าสู่ระบบ...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="max-w-6xl mx-auto p-6 flex flex-col lg:flex-row gap-8">
       {/* ฝั่งซ้าย: ทำคู่มือ */}
       <div className="flex-1">
-        <h1 className="text-3xl font-bold mb-6">📖 คู่มือการตั้งค่า</h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">📖 คู่มือการตั้งค่า</h1>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-500">👤 {user.email}</span>
+            <button onClick={handleLogout} className="text-sm border rounded px-3 py-1 hover:bg-gray-100">
+              ออกจากระบบ
+            </button>
+          </div>
+        </div>
+
         <div
           className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center cursor-pointer hover:border-blue-500 bg-white"
           onClick={() => fileRef.current?.click()}
@@ -184,6 +236,23 @@ export default function Home() {
           </button>
         )}
         {message && <p className="mt-4 text-sm font-bold">{message}</p>}
+
+        {/* รายการคู่มือของฉัน */}
+        {manuals.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xl font-bold mb-3">คู่มือของฉัน</h2>
+            <ul className="space-y-2">
+              {manuals.map((m) => (
+                <li key={m.id} className="bg-white border rounded-lg p-3 flex justify-between items-center">
+                  <p className="font-semibold">{m.title}</p>
+                  <a href={`/manual/${m.share_id}`} className="text-blue-600 text-sm">
+                    🔗 เปิดลิงก์แชร์
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* ฝั่งขวา: แชทกับ AI */}
