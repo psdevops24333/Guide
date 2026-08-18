@@ -1,6 +1,3 @@
-git init
 git add .
-git commit -m "init config guide app"
-git branch -M main
-git remote add origin https://github.com/psdevops24333/config-guide.git
-git push -u origin main
+git commit -m "add real next.js project"
+git push
