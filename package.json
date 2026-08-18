@@ -1,3 +1,5 @@
-git add .
-git commit -m "add real next.js project"
-git push
+{
+  "name": "guide",
+  "scripts": { "dev": "next dev", "build": "next build" },
+  "dependencies": { "next": "15.x.x", ... }
+}
