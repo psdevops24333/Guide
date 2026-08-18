@@ -28,7 +28,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ text: result.response.text() });
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "วิเคราะห์ภาพไม่สำเร็จ" }, { status: 500 });
+    console.error("Gemini analyze error:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
