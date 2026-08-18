@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "ไม่ได้ตั้งค่า GOOGLE_API_KEY" }, { status: 500 });
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
 
     const prompt = `คุณเป็นผู้เชี่ยวชาญด้านการตั้งค่าระบบ อ่านภาพหน้าจอนี้แล้วเขียนคู่มือการตั้งค่าทีละขั้นตอนเป็นภาษาไทย:
 1. บอกว่าหน้าจอ/เมนูนี้คืออะไร
